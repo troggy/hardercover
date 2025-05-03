@@ -17,7 +17,7 @@ export default defineManifest({
   },
   content_scripts: [
     {
-      matches: ['https://hardcover.app/books/*/editions'],
+      matches: ['https://hardcover.app/*'],
       js: ['src/contentScript/index.ts'],
     },
   ],
