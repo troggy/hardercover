@@ -1,5 +1,5 @@
 // as in Hardcover
-const linkStyle = 'transition-all underline-offset-2 text-gray-800 dark:text-gray-100  text-md underline hover:no-underline decoration-gray-300 dark:decoration-gray-500';
+const linkStyle = 'transition-all underline-offset-2 text-gray-800 dark:text-gray-100 text-md underline hover:no-underline decoration-gray-300 dark:decoration-gray-500';
 
 const createExternalLink = (text: string, href: string) => {
   const linkEl = document.createElement('a');
@@ -10,57 +10,60 @@ const createExternalLink = (text: string, href: string) => {
   return linkEl;
 };
 
-const inject = () => {
-  let rawElements = document.evaluate("//*[*[*[*[span[text()[contains(.,'Type')]]]]]]", document, null, XPathResult.ANY_TYPE, null);
-  let bookMetadata;
-  let bookMetadataElements = [];
-  while (bookMetadata = rawElements.iterateNext()) {
-    bookMetadataElements.push(bookMetadata);
+const getElementsByXpath = (xpath: string, root: Node | null | undefined) => {
+  const resultsRaw = document.evaluate(xpath, root || document, null, XPathResult.ANY_TYPE, null);
+  let results, resultsElements = [];
+  while (results = resultsRaw.iterateNext()) {
+    resultsElements.push(results);
   }
+  return resultsElements;
+};
+
+const inject = () => {
+  // look for a an element with "Type:" contents (we treat as a book edition card)
+  const bookMetadataElements = getElementsByXpath("//*[span[text()[contains(.,'Type')]]]", document);
 
   bookMetadataElements.forEach(bookMetadataEl => {
     if (!bookMetadataEl) return;
 
-    const searchBooksRow = document.createElement('p');
-    searchBooksRow.innerHTML = '<span class="font-bold">Search: </span><span></span>';
+      // add a new "Search" field
+      const searchField = bookMetadataEl.cloneNode(true);
+      searchField.childNodes[0].textContent = 'Search:';
+      const searchBooksLinkBox = document.createElement('div');
+      searchField.childNodes[1].textContent = '';
+      searchField.childNodes[1].appendChild(searchBooksLinkBox);
 
-    const searchBooksLinkBox = searchBooksRow.childNodes[1];
+      const bookTitle = (bookMetadataEl as Element).parentNode?.parentNode?.parentNode?.parentNode?.parentNode?.querySelector("a[href]")?.textContent as string;
 
-    const isbn13node = [...bookMetadataEl.childNodes[1]?.childNodes[0]?.childNodes || []].find(p => (p.childNodes[0]?.textContent || '')?.indexOf('ISBN 13') >= 0)?.childNodes[1]
-
-    if (isbn13node) {
-      const isbn13 = isbn13node.textContent || '';
-      isbn13node.replaceChild(
+      searchBooksLinkBox?.appendChild(
         createExternalLink(
-          isbn13,
-          `https://libgen.is/search.php?req=${isbn13}&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def`
-        ),
-        isbn13node.childNodes[0]
+          'Anna\'s Archive',
+          `https://annas-archive.li/search?index=&page=1&sort=&display=&q=${bookTitle}`
+        )
       );
-    }
+  
+      searchBooksLinkBox?.appendChild(document.createElement('br'));
+  
+      searchBooksLinkBox?.appendChild(createExternalLink(
+        'Flibusta',
+        `https://flibusta.is/booksearch?ask=${encodeURIComponent(bookTitle)}`
+      ));
+  
+      const isbn13node = getElementsByXpath(".//*[span[text()[contains(.,'ISBN 13')]]]", bookMetadataEl.parentNode)[0]?.childNodes[1];
+      if (isbn13node) {
+        const isbn13 = isbn13node.textContent || '';
+        isbn13node.replaceChild(
+          createExternalLink(
+            isbn13,
+            `https://annas-archive.li/search?index=&page=1&sort=&display=&q=${isbn13}`
+          ),
+          isbn13node.childNodes[0]
+        );
+      }
 
-    const bookTitle = bookMetadataEl.childNodes[0].textContent as string;
-
-    searchBooksLinkBox?.appendChild(
-      createExternalLink(
-        'Libgen',
-        `https://libgen.is/search.php?req=${bookTitle}&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def`
-      )
-    );
-
-    searchBooksLinkBox?.appendChild(document.createTextNode(', '));
-
-    searchBooksLinkBox?.appendChild(createExternalLink(
-      'Flibusta',
-      `https://flibusta.is/booksearch?ask=${encodeURIComponent(bookTitle)}`
-    ));
-
-    const rightBeforeBookActionButtons = [...bookMetadataEl.childNodes[1].childNodes[0].childNodes || []].slice(-1)[0] as HTMLElement;
-
-    rightBeforeBookActionButtons.insertAdjacentElement('beforebegin', searchBooksRow);
-  })
+      bookMetadataEl.parentNode?.appendChild(searchField);
+  });
 };
-
 
 let observer = new MutationObserver(mutations => {
   all:
@@ -68,13 +71,16 @@ let observer = new MutationObserver(mutations => {
 
     for (let node of mutation.addedNodes) {
       if (!(node instanceof HTMLElement)) continue;
-
       if ((node.textContent || '').indexOf('Type') >= 0) {
         inject();
         break all;
       }
     }
   }
-
 });
+
+// add immediatelly
+inject();
+
+// + wait for the changes to add upon (e.g. when client side navigation happens)
 observer.observe(document, { childList: true, subtree: true });
